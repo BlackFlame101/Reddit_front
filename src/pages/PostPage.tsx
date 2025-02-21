@@ -8,12 +8,12 @@ const PostPage = () => {
   const { postId } = useParams<{ postId: string }>();
   const navigate = useNavigate();
 
-  // Mocked post data
+  
   const [post, setPost] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Simulate loading post data
+    
     setTimeout(() => {
       setPost({
         _id: postId,

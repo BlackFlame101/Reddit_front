@@ -7,14 +7,14 @@ const SubredditPage = () => {
   const { subredditName } = useParams();
   const navigate = useNavigate();
 
-  // Mocked subreddit data
+  
   const [subreddit, setSubreddit] = useState<{ name: string; description?: string } | null>(null);
-  // Mocked posts data
+  
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Simulate loading data
+    
     setTimeout(() => {
       setSubreddit({
         name: subredditName || "general",

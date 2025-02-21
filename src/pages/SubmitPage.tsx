@@ -60,13 +60,13 @@ const SubmitPage = () => {
       setIsSubmitting(true);
       let imageUrl = undefined;
 
-      // Simulate image upload (if image is selected)
+      
       if (selectedImage) {
-        // Mock image upload process
-        imageUrl = "mock_storage_url"; // In a real app, you would get a URL after uploading the image
+        
+        imageUrl = "mock_storage_url"; 
       }
 
-      // Create the post with mocked data
+      
       createPost({
         subject: title.trim(),
         body: body.trim(),
