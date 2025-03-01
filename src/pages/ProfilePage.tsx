@@ -1,70 +1,150 @@
 import { useParams } from "react-router-dom";
+import { useState, useEffect } from "react";
 import PostCard from "../components/PostCard";
+import { postService, userService, commentService, subredditService } from "../services/api";
 import "../styles/SubmitPage.css";
+
+interface Post {
+  _id: string;
+  subject: string;
+  body: string;
+  createdAt: string;
+  author?: {
+    username: string;
+  };
+  subreddit?: {
+    name: string; 
+    _id?: string;
+  };
+  imageUrl?: string;
+  comments?: Array<{
+    _id: string;
+    content: string;
+    author?: {
+      username?: string;
+    };
+    createdAt?: string;
+  }>;
+  commentCount?: number;
+}
+
+interface PostApiResponse {
+  _id: string;
+  subject: string;
+  body: string;
+  createdAt: string;
+  author?: {
+    username: string;
+  };
+  subreddit?: {
+    _id?: string;
+    name?: string;
+  };
+  imageUrl?: string;
+}
+
+interface Subreddit {
+  _id: string;
+  name: string;
+}
 
 const ProfilePage = () => {
   const { username } = useParams();
+  const [user, setUser] = useState<{ _id: string } | null>(null);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [subredditMap, setSubredditMap] = useState<Record<string, string>>({});
 
-  
-  const posts = [
-    {
-      _id: "1",
-      subject: "Post 1",
-      body: "This is the first post.",
-      _creationTime: Date.now(),
-      authorId: {username},
-      author: { username: "dev_guru" },
-      subreddit: { name: "react" },
-    },
-    {
-      _id: "2",
-      subject: "Post 2",
-      body: "This is the second post.",
-      _creationTime: Date.now() - 86400000, 
-      authorId: "dev_guru",
-      author: { username: "dev_guru" },
-      subreddit: { name: "vuejs" },
-    },
-  ];
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        setLoading(true);
 
-  const stats = {
-    posts: posts.length, 
-  };
+        const allSubreddits = await subredditService.getAllSubreddits();
+        console.log("All subreddits:", allSubreddits);
 
-  
-  if (!posts || posts.length === 0)
-    return (
-      <div className="content-container">
-        <div className="profile-header">
-          <h1>u/{username}</h1>
-        </div>
-        <div className="loading">Loading posts...</div>
-      </div>
-    );
+        const subredditLookup: Record<string, string> = {};
+        allSubreddits.forEach((sub: Subreddit) => {
+          subredditLookup[sub._id] = sub.name;
+        });
+        setSubredditMap(subredditLookup);
+        console.log("Subreddit Map:", subredditLookup);
+
+        // Fetch user data
+        const userData = await userService.getUserByName(username as string);
+        console.log("User data:", userData);
+        setUser(userData);
+
+        // Fetch posts made by the user
+        const postsData = await postService.getPostsByUser(userData._id);
+        console.log("Initial posts data:", postsData);
+
+        // Enhance posts with subreddit names
+        const enhancedPosts = await Promise.all(
+          postsData.map(async (post: PostApiResponse) => {
+            let subredditInfo: { _id?: string; name: string } = { name: "Unknown Subreddit" };
+        
+            if (typeof post.subreddit === "string") {
+              try {
+                const subredditData = await subredditService.getSubredditById(post.subreddit);
+                if (subredditData) {
+                  subredditInfo = { _id: subredditData._id, name: subredditData.name };
+                }
+              } catch (err) {
+                console.error(`Error fetching subreddit ${post.subreddit}:`, err);
+              }
+            } else if (post.subreddit?._id) {
+              subredditInfo = {
+                _id: post.subreddit._id,
+                name: post.subreddit.name || "Unknown Subreddit",
+              };
+            }
+        
+            console.log(`Post ${post._id} mapped to subreddit:`, subredditInfo);
+        
+            // Fetch comments
+            const comments = await commentService.getPostComments(post._id);
+        
+            return {
+              ...post,
+              subreddit: subredditInfo,
+              comments: comments,
+              commentCount: comments.length,
+            };
+          })
+        );
+        
+
+        console.log("Enhanced posts:", enhancedPosts);
+        setPosts(enhancedPosts);
+      } catch (err) {
+        console.error("Error fetching data:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserData();
+  }, [username]);
 
   return (
     <div className="content-container">
       <div className="profile-header">
         <h1>u/{username}</h1>
-        <p style={{ color: "#7c7c7c" }}>Posts: {stats.posts ?? 0}</p>
+        <p style={{ color: "#7c7c7c" }}>Posts: {posts.length}</p>
       </div>
-      <div className="posts-container">
-        {posts.length === 0 ? (
-          <div className="no-posts">
-            <p>No posts yet</p>
-          </div>
-        ) : (
-          posts.map((post) => (
-            <PostCard key={post._id} post ={post} showSubreddit={true} />
-          ))
-        )}
-        {/* Simulate "Load More" functionality */}
-        {false && (
-          <button className="load-more" onClick={() => {}}>
-            Load More
-          </button>
-        )}
-      </div>
+
+      {loading ? (
+        <div className="loading">Loading posts...</div>
+      ) : posts.length === 0 ? (
+        <div className="no-posts"><p>No posts yet</p></div>
+      ) : (
+        <div className="posts-container">
+          {posts.map((post) => (
+            <PostCard key={post._id} post={post} showSubreddit={true} />
+          ))}
+        </div>
+      )}
     </div>
   );
 };

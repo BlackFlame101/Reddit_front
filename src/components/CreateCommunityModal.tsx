@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { useAuth } from "../contexts/AuthContext"; 
 import "../styles/CreateCommunityModal.css";
+import { subredditService } from "../services/api";
 
 interface CreateCommunityModalProps {
   isOpen: boolean;
@@ -12,12 +14,15 @@ const CreateCommunityModal = ({ isOpen, onClose }: CreateCommunityModalProps) =>
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
+  const { currentUser } = useAuth(); 
+
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
+    // Validate inputs
     if (!name) {
       setError("Community name is required");
       return;
@@ -33,13 +38,28 @@ const CreateCommunityModal = ({ isOpen, onClose }: CreateCommunityModalProps) =>
       return;
     }
 
+    // Ensure the user is authenticated
+    if (!currentUser) {
+      setError("You must be logged in to create a community.");
+      return;
+    }
+
     setIsLoading(true);
 
-    setTimeout(() => {
-      console.log("Community Created:", { name, description });
+    try {
+      // Create the subreddit with the current user as the creator
+      await subredditService.createSubreddit({
+        name,
+        description,
+        creator: currentUser._id, 
+      });
+
       setIsLoading(false);
-      onClose();
-    }, 1000);
+      onClose(); 
+    } catch (error: any) {
+      setError(error.message || "Failed to create community. Please try again.");
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -55,13 +75,13 @@ const CreateCommunityModal = ({ isOpen, onClose }: CreateCommunityModalProps) =>
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label htmlFor="name">Name</label>
-            <div className="input-prefix">r/</div>
+            
             <input
               type="text"
               id="name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="community_name"
+              placeholder="/r community_name"
               maxLength={21}
               disabled={isLoading}
             />

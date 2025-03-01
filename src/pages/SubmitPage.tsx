@@ -3,29 +3,19 @@ import { useState } from "react";
 import "../styles/SubmitPage.css";
 import { FaImage } from "react-icons/fa";
 import { IoMdClose } from "react-icons/io";
+import { postService , subredditService } from "../services/api";
+import { useAuth } from "../contexts/AuthContext"; 
 
 const SubmitPage = () => {
   const { subredditName } = useParams();
   const navigate = useNavigate();
-
-  // Mocked subreddit data
-  const subreddit = {
-    _id: "12345",
-    name: subredditName || "general",
-  };
+  const { currentUser, isAuthenticated } = useAuth(); 
 
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Mocked function to simulate post creation
-  const createPost = (postData: any) => {
-    console.log("Post created:", postData);
-    // Simulate successful post creation
-    navigate(`/r/${subredditName}`);
-  };
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -38,7 +28,9 @@ const SubmitPage = () => {
       setSelectedImage(file);
       const reader = new FileReader();
       reader.onloadend = () => {
-        setImagePreview(reader.result as string);
+        if (typeof reader.result === "string") {
+          setImagePreview(reader.result);
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -51,35 +43,59 @@ const SubmitPage = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !subreddit) {
-      alert("Please enter a title and select a subreddit");
+  
+    if (!isAuthenticated || !currentUser) {
+      alert("You must be logged in to submit a post");
+      navigate("/login");
       return;
     }
-
+    if (!subredditName) {
+      alert("Invalid subreddit!");
+      return;
+    }
+    
+    setIsSubmitting(true);
+    
     try {
-      setIsSubmitting(true);
-      let imageUrl = undefined;
-
-      
-      if (selectedImage) {
-        
-        imageUrl = "mock_storage_url"; 
+      // get  subreddit
+      const subreddit = await subredditService.getSubredditByName(subredditName);
+      if (!subreddit) {
+        alert("Subreddit not found!");
+        setIsSubmitting(false);
+        return;
       }
-
-      
-      createPost({
-        subject: title.trim(),
-        body: body.trim(),
-        subreddit: subreddit._id,
-        storageId: imageUrl,
-      });
+  
+      // Create and populate form data
+      const formData = new FormData();
+      formData.append("subject", title.trim());
+      formData.append("body", body.trim() || "");
+      formData.append("subreddit", subreddit._id);
+      formData.append("author", currentUser._id);
+  
+      if (selectedImage) {
+        formData.append("image", selectedImage);
+      }
+  
+      console.log("Sending FormData:");
+      const entries = Array.from(formData.entries());
+      for (const [key, value] of entries) {
+        console.log(key, value);
+      }
+  
+      // Send the post request
+      await postService.createPost(formData); 
+      navigate(`/r/${subredditName}`);
     } catch (error) {
-      console.log(error);
-      alert("Failed to create post. Please try again.");
+      console.error("Error creating post:", error);
+      alert("Failed to create post.");
     } finally {
       setIsSubmitting(false);
     }
   };
+  // console.log("Subreddit Name:", subredditName);
+  // console.log("title:", title);
+  // console.log("body:", body);
+  // console.log("Current User:", currentUser._id);
 
   return (
     <div className="content-container">

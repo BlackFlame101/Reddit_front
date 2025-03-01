@@ -1,37 +1,103 @@
 import { FaRegCommentAlt, FaTrash } from "react-icons/fa";
 import { TbArrowBigUp, TbArrowBigDown } from "react-icons/tb";
 import { Link, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import Comment from "./Comment";
 import "../styles/PostCard.css";
+import { commentService, voteService, postService } from "../services/api";
+import { useAuth } from "../contexts/AuthContext"; 
 
 interface Post {
   _id: string;
   subject: string;
   body: string;
-  _creationTime: number;
+  _creationTime?: number;
+  createdAt: string;
   author?: {
+    _id?: string; 
     username: string;
   };
   subreddit?: {
     name: string;
   };
   imageUrl?: string;
+  comments?: Array<{
+    _id: string;
+    content: string;
+    author?: {
+      _id?: string;
+      username?: string;
+    };
+    _creationTime?: number;
+    createdAt?: string;
+  }>;
+  commentCount?: number;
 }
 
 interface PostCardProps {
   post: Post;
   showSubreddit?: boolean;
   expandedView?: boolean;
+  onDelete?: () => void; 
 }
 
-const VoteButtons = () => {
+const VoteButtons = ({ postId }: { postId: string }) => {
+  const [voteCount, setVoteCount] = useState(0);
+  const [userVote, setUserVote] = useState(0);
+  const { currentUser } = useAuth(); 
+
+  useEffect(() => {
+    const fetchVotes = async () => {
+      try {
+        const data = await voteService.getPostVotes(postId);
+        console.log("Fetched Votes:", data);
+        setVoteCount(data.totalVotes);
+        setUserVote(data.userVote || 0);
+      } catch (err) {
+        console.error("Failed to fetch votes:", err);
+      }
+    };
+
+    fetchVotes();
+  }, [postId]);
+
+  const handleVote = async (value: number) => {
+    if (!currentUser) {
+      alert("You must be logged in to vote");
+      return;
+    }
+
+    try {
+      const newValue = userVote === value ? 0 : value; 
+      const response = await voteService.castVote({
+        post: postId,
+        value: newValue,
+      });
+
+      console.log("Vote Response:", response); 
+      setVoteCount(response.totalVotes);
+      setUserVote(response.userVote);
+    } catch (error) {
+      console.error("Error voting:", error);
+      alert("There was an error casting your vote. Please try again.");
+    }
+  };
+
   return (
-    <div className="post-votes">
-      <button className="vote-button">
+    <div className="vote-section">
+      <button
+        className={`vote-button ${userVote === 1 ? "voted" : ""}`}
+        onClick={() => handleVote(1)} 
+        disabled={!currentUser} 
+      >
         <TbArrowBigUp size={24} />
       </button>
-      <span className="vote-count total-count">0</span>
-      <button className="vote-button">
+      <span className="vote-count">{voteCount}</span>
+      <button
+        className={`vote-button ${userVote === -1 ? "voted downvoted" : ""}`}
+        onClick={() => handleVote(-1)} 
+        disabled={!currentUser} 
+      >
         <TbArrowBigDown size={24} />
       </button>
     </div>
@@ -42,17 +108,19 @@ const PostHeader = ({
   author,
   subreddit,
   showSubreddit,
-  creationTime,
+  createdAt,
 }: {
   author?: { username: string };
   subreddit?: { name: string };
   showSubreddit: boolean;
-  creationTime: number;
+  createdAt: string;
 }) => {
   return (
     <div className="post-header">
       {author ? (
-        <Link to={`/u/${author.username}`}>u/{author.username}</Link>
+        <Link to={`/u/${author.username}`} className="post-author">
+          u/{author.username}
+        </Link>
       ) : (
         <span className="post-author">u/deleted</span>
       )}
@@ -66,7 +134,7 @@ const PostHeader = ({
       )}
       <span className="post-dot">-</span>
       <span className="post-timestamp">
-        {new Date(creationTime).toLocaleString()}
+        {new Date(createdAt).toLocaleString()}
       </span>
     </div>
   );
@@ -83,12 +151,14 @@ const PostContent = ({
   image?: string;
   expandedView: boolean;
 }) => {
+  const hasImage = !!image; 
+
   return (
     <>
       {expandedView ? (
         <>
           <h1 className="post-title">{subject}</h1>
-          {image && (
+          {hasImage && (
             <div className="post-image-container">
               <img src={image} alt="Post content" className="post-image" />
             </div>
@@ -96,10 +166,12 @@ const PostContent = ({
           {body && <p className="post-body">{body}</p>}
         </>
       ) : (
-        <div className="preview-post">
-          <h2 className="post-title">{subject}</h2>
-          {body && <p className="post-body">{body}</p>}
-          {image && (
+        <div className={`preview-post ${hasImage ? "" : "no-image"}`}>
+          <div className="text-content">
+            <h2 className="post-title">{subject}</h2>
+            {body && <p className="post-body">{body}</p>}
+          </div>
+          {hasImage && (
             <div className="post-image-container small-img">
               <img src={image} alt="Post content" className="post-image" />
             </div>
@@ -114,9 +186,16 @@ const PostCard = ({
   post,
   showSubreddit = false,
   expandedView = false,
+  onDelete,
 }: PostCardProps) => {
   const [showComments, setShowComments] = useState(expandedView);
+  const [newComment, setNewComment] = useState("");
+  const [comments, setComments] = useState(post.comments || []);
+  const [isDeleting, setIsDeleting] = useState(false); 
   const navigate = useNavigate();
+  const { currentUser } = useAuth(); 
+
+  const isAuthor = currentUser?._id === post.author?._id; 
 
   const handleComment = () => {
     if (!expandedView) {
@@ -126,15 +205,69 @@ const PostCard = ({
     }
   };
 
+  useEffect(() => {
+    if (expandedView) {
+      fetchComments();
+    }
+  }, [expandedView, post._id]);
+
+  const fetchComments = async () => {
+    try {
+      const data = await commentService.getPostComments(post._id);
+      setComments(data);
+    } catch (error) {
+      console.error("Failed to fetch comments:", error);
+    }
+  };
+
+  const handleSubmitComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newComment.trim()) {
+      try {
+        await commentService.createComment(post._id, {
+          content: newComment,
+          author: currentUser?._id, 
+        });
+
+        await fetchComments();
+        setNewComment("");
+      } catch (error) {
+        console.error("Failed to submit comment:", error);
+      }
+    }
+  };
+
+  const handleDeletePost = async () => {
+    if (!isAuthor || isDeleting) return; 
+
+    if (window.confirm("Are you sure you want to delete this post?")) {
+      try {
+        setIsDeleting(true);
+        await postService.deletePost(post._id); 
+
+        if (onDelete) {
+          onDelete(); 
+        } else {
+          navigate("/"); 
+        }
+      } catch (error) {
+        console.error("Failed to delete post:", error);
+        alert("Failed to delete post. Please try again.");
+      } finally {
+        setIsDeleting(false);
+      }
+    }
+  };
+
   return (
     <div className={`post-card ${expandedView ? "expanded" : ""}`}>
-      <VoteButtons />
+      <VoteButtons postId={post._id} />
       <div className="post-content">
         <PostHeader
           author={post.author}
           subreddit={post.subreddit}
           showSubreddit={showSubreddit}
-          creationTime={post._creationTime}
+          createdAt={post.createdAt}
         />
         <PostContent
           subject={post.subject}
@@ -145,13 +278,54 @@ const PostCard = ({
         <div className="post-actions">
           <button className="action-button" onClick={handleComment}>
             <FaRegCommentAlt />
-            <span>0 Comments</span>
+            <span>{post.commentCount ?? comments.length} Comments</span>
           </button>
-          <button className="action-button delete-button">
-            <FaTrash />
-            <span>Delete</span>
-          </button>
+
+          {/* Show delete button only if the current user is the author */}
+          {isAuthor && (
+            <button
+              className="action-button delete-button"
+              onClick={handleDeletePost}
+              disabled={isDeleting}
+            >
+              <FaTrash />
+              <span>{isDeleting ? "Deleting..." : "Delete"}</span>
+            </button>
+          )}
         </div>
+
+        {/* Render comments section if showComments is true */}
+        {showComments && (
+          <div className="comments-section">
+            {/* Comment Input Area */}
+            <form onSubmit={handleSubmitComment} className="comment-form">
+              <textarea
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                placeholder="Write a comment..."
+                className="comment-input"
+              />
+              <button type="submit" className="comment-submit">
+                Submit
+              </button>
+            </form>
+
+            {/* Display Existing Comments */}
+            <div className="comments-list">
+              {comments.length > 0 ? (
+                comments.map((comment) => (
+                  <Comment 
+                    key={comment._id} 
+                    comment={comment} 
+                    onDelete={fetchComments}
+                  />
+                ))
+              ) : (
+                <p>No comments yet.</p>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

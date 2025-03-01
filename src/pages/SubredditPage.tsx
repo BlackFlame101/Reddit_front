@@ -1,44 +1,92 @@
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useState, useEffect } from "react";
 import PostCard from "../components/PostCard";
+import { subredditService, postService, commentService } from "../services/api"; // Import API services
 import "../styles/SubredditPage.css";
+
+interface Post {
+  _id: string;
+  subject: string;
+  body: string;
+  createdAt: string;
+  author?: {
+    username: string;
+  };
+  subreddit?: {
+    name: string;
+  };
+  imageUrl?: string;
+  comments?: Array<{
+    _id: string;
+    content: string;
+    author?: {
+      username?: string;
+    };
+    createdAt?: string;
+  }>;
+  commentCount?: number;
+}
 
 const SubredditPage = () => {
   const { subredditName } = useParams();
-  const navigate = useNavigate();
-
-  
-  const [subreddit, setSubreddit] = useState<{ name: string; description?: string } | null>(null);
-  
-  const [posts, setPosts] = useState<any[]>([]);
+  const [subreddit, setSubreddit] = useState<{ _id: string; name: string; description?: string } | null>(null);
+  const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    
-    setTimeout(() => {
-      setSubreddit({
-        name: subredditName || "general",
-        description: "A place for all general discussions.",
-      });
-      setPosts([
-        {
-          _id: "1",
-          title: "Post 1",
-          content: "This is the content of the first post.",
-        },
-        {
-          _id: "2",
-          title: "Post 2",
-          content: "This is the content of the second post.",
-        },
-      ]);
-      setLoading(false);
-    }, 1000);
+    const fetchSubredditData = async () => {
+      try {
+        setLoading(true);
+        setError("");
+
+        // Fetch subreddit details
+        const subredditData = await subredditService.getSubredditByName(subredditName as string);
+        console.log("Subreddit data:", subredditData);
+        setSubreddit(subredditData);
+
+        // Fetch posts for the subreddit
+        const postsData = await postService.getPostsBySubreddit(subredditData._id);
+        console.log("Initial posts data:", postsData);
+        
+        // Fetch comment counts for each post
+        const postsWithComments = await Promise.all(
+          postsData.map(async (post: Post) => {
+            try {
+              const comments = await commentService.getPostComments(post._id);
+              console.log(`Comments for post ${post._id}:`, comments);
+              
+              return {
+                ...post,
+                comments: comments,
+                commentCount: comments.length
+              };
+            } catch (err) {
+              console.error(`Error fetching comments for post ${post._id}:`, err);
+              return {
+                ...post,
+                commentCount: 0
+              };
+            }
+          })
+        );
+        
+        console.log("Posts with comments:", postsWithComments);
+        setPosts(postsWithComments);
+      } catch (err: any) {
+        console.error("Error fetching subreddit:", err);
+        setError("Subreddit not found");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSubredditData();
   }, [subredditName]);
 
   if (loading) return <p>Loading...</p>;
 
-  if (!subreddit) {
+  if (error || !subreddit) {
     return (
       <div className="content-container">
         <div className="not-found">
@@ -62,7 +110,11 @@ const SubredditPage = () => {
           </div>
         ) : (
           posts.map((post) => (
-            <PostCard key={post._id} post={post} />
+            <PostCard 
+              key={post._id} 
+              post={post} 
+              showSubreddit={false} 
+            />
           ))
         )}
       </div>

@@ -47,3 +47,29 @@
   word-break: break-word;
   margin-left: 0;
 }
+
+
+.comment-delete-button {
+  background-color: transparent;
+  border: none;
+  color: #ff4d4d; 
+  cursor: pointer;
+  padding: 5px;
+  margin-left: 10px;
+  transition: all 0.3s ease;
+}
+
+.comment-delete-button:disabled {
+  color: #d3d3d3; 
+  cursor: not-allowed;
+}
+
+.comment-delete-button:hover:not(:disabled) {
+  color: #ff0000; 
+  transform: scale(1.1); 
+}
+
+.comment-delete-button:focus {
+  outline: none; 
+  box-shadow: 0 0 0 2px rgba(255, 0, 0, 0.5);
+}
